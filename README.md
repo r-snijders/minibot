@@ -1,6 +1,6 @@
 # Minibot: one ROS interface for Gazebo and a tabletop build
 
-A two-wheel differential-drive rover (180 mm long, 140 mm wide), with 65 mm wheels and a trailing ball caster. The first milestone is teleoperation and odometry; add a camera or lidar later.
+A two-wheel differential-drive rover (180 mm long, 140 mm wide), with 65 mm wheels and a trailing ball caster. Gazebo includes a 2D lidar, forward camera, and a simulation-only charging dock. See [sensors and charging design](docs/sensors-and-dock.md) before buying parts or wiring a charger.
 
 ## Software (Ubuntu 26.04)
 
@@ -8,7 +8,7 @@ Install [ROS 2 Lyrical](https://docs.ros.org/en/lyrical/Installation/Ubuntu-Inst
 
 ```bash
 sudo apt update
-sudo apt install ros-lyrical-ros-gz ros-lyrical-teleop-twist-keyboard python3-serial python3-colcon-common-extensions
+sudo apt install ros-lyrical-ros-gz ros-lyrical-teleop-twist-keyboard ros-lyrical-slam-toolbox python3-serial python3-colcon-common-extensions
 mkdir -p ~/rover_ws/src
 git clone https://github.com/r-snijders/minibot.git ~/rover_ws/src/minibot
 cd ~/rover_ws
@@ -28,6 +28,18 @@ ros2 topic echo /odom
 ```
 
 Click the Gazebo play button if the world is paused. Keep keyboard commands below 0.25 m/s and 1.5 rad/s. The Gazebo DiffDrive system consumes `/cmd_vel`, publishes `/odom`, and stops on a 0.5 s command timeout. The bridge maps these same topics to ROS.
+
+The simulated lidar publishes `/scan`; the camera publishes `/camera/image_raw` and `/camera/camera_info`. To make a 2D map, start `ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true` in another sourced terminal, then drive around the room slowly. Inspect the sensors with `ros2 topic echo /scan --once` and `ros2 topic hz /camera/image_raw`.
+
+The orange box at `(1, 0)` is the dock. To start a **fixed-pose simulation demonstration** from the initial robot pose:
+
+```bash
+ros2 topic pub --once /dock/request std_msgs/msg/Bool '{data: true}'
+ros2 topic echo /dock/status
+ros2 topic echo /battery_state
+```
+
+Alternatively, `ros2 launch minibot sim.launch.py initial_soc:=0.2` requests docking on low simulated battery. The demo approaches a known dock along an unobstructed straight path, stops, and increases a mock state of charge. It does not detect real electrical contact or navigate back to a dock from elsewhere in a map. Stop teleoperation before requesting the demo so two nodes do not command `/cmd_vel` at once.
 
 ### Physical build
 
@@ -49,11 +61,12 @@ Use a stable `/dev/serial/by-id/...` path (find it with `ls /dev/serial/by-id/`)
 
 ## Layout and assumptions
 
-- `worlds/rover.sdf`: chassis, wheels, caster, Gazebo DiffDrive plugin, flat world.
+- `worlds/rover.sdf`: chassis, wheels, caster, Gazebo DiffDrive plugin, room, simulated sensors and dock.
 - `launch/sim.launch.py`: Gazebo and topic bridges.
+- `minibot/dock_demo.py`: fixed-pose docking and mock battery simulation only.
 - `minibot/hardware.py`: velocity conversion and wheel-encoder odometry.
 - `firmware/rover_motors`: low-level speed control and watchdog.
 
-The physical driver uses `/cmd_vel` (`geometry_msgs/Twist`) and publishes `/odom` (`nav_msgs/Odometry`) at 20 Hz. The first version has no IMU, obstacle avoidance, battery monitor, or autonomous navigation. Keep its wheels clear of people and objects while testing.
+The physical driver uses `/cmd_vel` (`geometry_msgs/Twist`) and publishes `/odom` (`nav_msgs/Odometry`) at 20 Hz. Physical charging, battery telemetry, and navigation remain hardware integration work. The camera and lidar require their own drivers on the physical robot. Keep its wheels clear of people and objects while testing.
 
 Official references: [ROS 2 Lyrical installation](https://docs.ros.org/en/lyrical/Installation/Ubuntu-Install-Debs.html), [ROS and Gazebo pairing](https://gazebosim.org/docs/latest/ros_installation/), [Gazebo ROS bridge](https://gazebosim.org/docs/latest/ros2_integration/).

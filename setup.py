@@ -10,5 +10,6 @@ setup(
     install_requires=['setuptools'], zip_safe=True,
     maintainer='Ron Snijders', maintainer_email='ronsnijdersron@gmail.com',
     description='Two-wheel rover simulator and serial hardware driver',
-    license='MIT', entry_points={'console_scripts': ['hardware = minibot.hardware:main']},
+    license='MIT', entry_points={'console_scripts': ['hardware = minibot.hardware:main',
+                                                   'dock_demo = minibot.dock_demo:main']},
 )
