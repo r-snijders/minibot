@@ -15,6 +15,7 @@ def generate_launch_description():
         IncludeLaunchDescription(PythonLaunchDescriptionSource(gz_launch),
                                  launch_arguments={'gz_args': '-r ' + world}.items()),
         Node(package='ros_gz_bridge', executable='parameter_bridge', output='screen',
+             remappings=[('/cmd_vel', '/drive/cmd_vel')],
              arguments=['/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
                         '/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry',
                         '/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
@@ -27,6 +28,7 @@ def generate_launch_description():
         Node(package='tf2_ros', executable='static_transform_publisher',
              arguments=['--x', '0.09', '--y', '0', '--z', '0.08', '--roll', '-1.5707963', '--pitch', '0', '--yaw', '-1.5707963',
                         '--frame-id', 'base_link', '--child-frame-id', 'camera_optical_frame']),
-        Node(package='minibot', executable='dock_demo', output='screen',
+        Node(package='minibot', executable='velocity_gate', output='screen'),
+        Node(package='minibot', executable='sim_battery', output='screen',
              parameters=[{'use_sim_time': True, 'initial_soc': LaunchConfiguration('initial_soc')}]),
     ])

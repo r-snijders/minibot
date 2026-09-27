@@ -8,7 +8,7 @@ Install [ROS 2 Lyrical](https://docs.ros.org/en/lyrical/Installation/Ubuntu-Inst
 
 ```bash
 sudo apt update
-sudo apt install ros-lyrical-ros-gz ros-lyrical-teleop-twist-keyboard ros-lyrical-slam-toolbox python3-serial python3-colcon-common-extensions
+sudo apt install ros-lyrical-ros-gz ros-lyrical-teleop-twist-keyboard ros-lyrical-slam-toolbox ros-lyrical-cv-bridge ros-lyrical-visualization-msgs python3-opencv python3-serial python3-colcon-common-extensions espeak-ng
 mkdir -p ~/rover_ws/src
 git clone https://github.com/r-snijders/minibot.git ~/rover_ws/src/minibot
 cd ~/rover_ws
@@ -31,15 +31,28 @@ Click the Gazebo play button if the world is paused. Keep keyboard commands belo
 
 The simulated lidar publishes `/scan`; the camera publishes `/camera/image_raw` and `/camera/camera_info`. To make a 2D map, start `ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true` in another sourced terminal, then drive around the room slowly. Inspect the sensors with `ros2 topic echo /scan --once` and `ros2 topic hz /camera/image_raw`.
 
-The orange box at `(1, 0)` is the dock. To start a **fixed-pose simulation demonstration** from the initial robot pose:
+### Autonomous mapping, charging, and greetings
+
+Run this instead of the standalone simulation command above; it starts Gazebo,
+SLAM, exploration, person detection, speech, and the battery fixture together:
 
 ```bash
-ros2 topic pub --once /dock/request std_msgs/msg/Bool '{data: true}'
-ros2 topic echo /dock/status
+ros2 launch minibot autonomy.launch.py
+# Or start low to exercise return-to-dock immediately:
+ros2 launch minibot autonomy.launch.py initial_soc:=0.22
+ros2 topic echo /behavior/status
 ros2 topic echo /battery_state
 ```
 
-Alternatively, `ros2 launch minibot sim.launch.py initial_soc:=0.2` requests docking on low simulated battery. The demo approaches a known dock along an unobstructed straight path, stops, and increases a mock state of charge. It does not detect real electrical contact or navigate back to a dock from elsewhere in a map. Stop teleoperation before requesting the demo so two nodes do not command `/cmd_vel` at once.
+The robot explores reachable parts of `/map`, favors places near unknown space,
+returns to a saved map location below 25% battery, verifies charger feedback, and
+resumes after 90%. A confirmed camera detection triggers “Hi!” and a 10-second
+stop, followed by the previous task. It does not identify who the person is.
+The map marker `/dock/markers` labels the charging base in RViz.
+
+See [behavior instructions and limits](docs/behavior.md) for the greeting test,
+physical setup, map saving, and battery thresholds. The plain Gazebo room has no
+human model, so it does not by itself exercise camera person recognition.
 
 ### Physical build
 
@@ -63,10 +76,17 @@ Use a stable `/dev/serial/by-id/...` path (find it with `ls /dev/serial/by-id/`)
 
 - `worlds/rover.sdf`: chassis, wheels, caster, Gazebo DiffDrive plugin, room, simulated sensors and dock.
 - `launch/sim.launch.py`: Gazebo and topic bridges.
-- `minibot/dock_demo.py`: fixed-pose docking and mock battery simulation only.
+- `minibot/autonomy.py`: mapping patrol, map-based dock return, charge confirmation, greetings.
+- `minibot/velocity_gate.py`: command selection and timeout; outputs `/drive/cmd_vel`.
+- `minibot/sim_battery.py`: Gazebo-only battery and mock contact feedback.
+- `minibot/person_detector.py` and `speech.py`: offline baseline people detector and speech.
 - `minibot/hardware.py`: velocity conversion and wheel-encoder odometry.
 - `firmware/rover_motors`: low-level speed control and watchdog.
 
-The physical driver uses `/cmd_vel` (`geometry_msgs/Twist`) and publishes `/odom` (`nav_msgs/Odometry`) at 20 Hz. Physical charging, battery telemetry, and navigation remain hardware integration work. The camera and lidar require their own drivers on the physical robot. Keep its wheels clear of people and objects while testing.
+The hardware launch connects the physical driver to `/drive/cmd_vel` and publishes
+encoder `/odom` at 20 Hz. Manual commands still go to `/cmd_vel`; autonomous commands
+have exclusive control while the behavior is enabled. Physical charging and battery
+telemetry remain hardware integration work. The camera and lidar require their own
+drivers on the physical robot. Keep its wheels clear of people and objects while testing.
 
 Official references: [ROS 2 Lyrical installation](https://docs.ros.org/en/lyrical/Installation/Ubuntu-Install-Debs.html), [ROS and Gazebo pairing](https://gazebosim.org/docs/latest/ros_installation/), [Gazebo ROS bridge](https://gazebosim.org/docs/latest/ros2_integration/).

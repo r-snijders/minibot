@@ -22,12 +22,12 @@ The dock can be a low-voltage, wall-supplied station with a wide funnel and rece
 Suggested control sequence:
 
 1. A battery monitor publishes `/battery_state`; below a threshold, request return-to-dock while retaining enough reserve to drive home.
-2. A map/localization stack (Nav2) takes the robot to a pose near the dock. The lidar and encoder odometry support mapping; localization and obstacle-aware navigation are additional work.
+2. The prototype grid planner takes the robot through known free space to a pose near the saved dock. The lidar and encoder odometry support mapping. Nav2 is a possible later replacement for this small navigation controller.
 3. A dock marker or short-range alignment sensor guides the final slow approach. Add a bumper/contact sensor and a way to detect a stalled wheel.
 4. Stop the motors. Confirm contact **and actual positive charging current** within a timeout; otherwise back away and retry only a limited number of times.
 5. Remain stopped while charging; undock after the charge controller reports completion. A motor controller watchdog and charger protection must remain effective independently of ROS.
 
-[Nav2's Docking Server](https://docs.nav2.org/tutorials/docs/using_docking.html) is the natural later integration point for approach and retries. Its charging confirmation should come from the actual charger telemetry. In the present repository, `dock_demo.py` only demonstrates the last straight-line approach in Gazebo and publishes an artificial battery percentage. It does not control real charge hardware and must not be launched as a physical charging controller.
+[Nav2's Docking Server](https://docs.nav2.org/tutorials/docs/using_docking.html) is a later integration option for approach and retries. The current `autonomy.py` already returns to a registered map pose and waits for charger feedback; `sim_battery.py` supplies artificial battery/contact feedback only in Gazebo. Neither implements a physical charging circuit. See [behavior instructions](behavior.md).
 
 ### Mechanical and electrical decisions still needed
 
