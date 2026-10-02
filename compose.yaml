@@ -1,0 +1,71 @@
+x-ros: &ros
+  image: minibot:lyrical
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  network_mode: host
+  init: true
+  environment:
+    ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-42}"
+    RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+    GZ_PARTITION: "${GZ_PARTITION:-minibot}"
+  restart: unless-stopped
+
+services:
+  gazebo:
+    <<: *ros
+    command: [xvfb-run, -a, ros2, launch, minibot, compose_sim.launch.py]
+  platform:
+    <<: *ros
+    command: [ros2, run, minibot, velocity_gate]
+  battery:
+    <<: *ros
+    command: [ros2, run, minibot, sim_battery, --ros-args, -p, 'use_sim_time:=true']
+  navigation:
+    <<: *ros
+    volumes:
+      - robot-state:/root/.local/state/minibot
+    command: [ros2, launch, minibot, autonomy.launch.py, 'simulation:=true', 'start_simulation:=false', 'vision:=false', 'speech:=false']
+  vlm:
+    <<: *ros
+    command:
+      - ros2
+      - run
+      - minibot
+      - vlm
+      - --ros-args
+      - -p
+      - 'use_sim_time:=true'
+      - -p
+      - 'endpoint:=${VLM_ENDPOINT:-http://127.0.0.1:11434}'
+      - -p
+      - 'model:=${VLM_MODEL:-qwen2.5vl:3b}'
+  reasoning:
+    <<: *ros
+    command: [ros2, run, minibot, reasoning]
+  model:
+    image: "${OLLAMA_IMAGE:-ollama/ollama:latest}"
+    profiles: [ai]
+    ports: ['127.0.0.1:11434:11434']
+    volumes: [models:/root/.ollama]
+    restart: unless-stopped
+  gui:
+    <<: *ros
+    profiles: [gui]
+    restart: 'no'
+    command: [gz, sim, -g]
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-42}"
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      GZ_PARTITION: "${GZ_PARTITION:-minibot}"
+      DISPLAY: "${DISPLAY:-:0}"
+      XAUTHORITY: /tmp/xauthority
+      QT_QPA_PLATFORM: xcb
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - '${XAUTHORITY:-/tmp/minibot.xauth}:/tmp/xauthority:ro'
+
+volumes:
+  models:
+  robot-state:

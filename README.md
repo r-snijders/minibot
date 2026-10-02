@@ -2,7 +2,21 @@
 
 A two-wheel differential-drive rover (180 mm long, 140 mm wide), with 65 mm wheels and a trailing ball caster. Gazebo includes a 2D lidar, forward camera, and a simulation-only charging dock. See [sensors and charging design](docs/sensors-and-dock.md) before buying parts or wiring a charger.
 
-## Software (Ubuntu 26.04)
+## Docker Compose (recommended)
+
+Run ROS 2 Lyrical, Gazebo Jetty, platform control, navigation, a VLM adapter and
+reasoning as separate services. See [container setup and commands](docs/compose.md)
+for NVIDIA/CPU startup, model download, optional GUI and integration checks.
+
+```bash
+docker compose -f compose.yaml -f compose.nvidia.yaml --profile ai up --build -d
+docker compose --profile ai exec model ollama pull qwen2.5vl:3b
+```
+
+No ROS installation on the host is required. The reasoning policy is currently
+deterministic; the VLM performs real inference through Ollama.
+
+## Native software (Ubuntu 26.04, optional)
 
 Install [ROS 2 Lyrical](https://docs.ros.org/en/lyrical/Installation/Ubuntu-Install-Debs.html) from the official instructions, then:
 

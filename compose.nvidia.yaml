@@ -1,0 +1,13 @@
+# Requires the host NVIDIA driver and NVIDIA Container Toolkit.
+services:
+  gazebo:
+    gpus: all
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: graphics,utility,compute
+    command: [ros2, launch, minibot, compose_sim.launch.py, 'headless_rendering:=true']
+  model:
+    gpus: all
+  gui:
+    gpus: all
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: graphics,utility,compute,display

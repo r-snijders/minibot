@@ -12,6 +12,8 @@ setup(
     maintainer='Ron Snijders', maintainer_email='ronsnijdersron@gmail.com',
     description='Two-wheel rover simulator and serial hardware driver',
     license='MIT', entry_points={'console_scripts': ['hardware = minibot.hardware:main',
+                                                   'vlm = minibot.vlm:main',
+                                                   'reasoning = minibot.reasoning:main',
                                                    'autonomy = minibot.autonomy:main',
                                                    'velocity_gate = minibot.velocity_gate:main',
                                                    'sim_battery = minibot.sim_battery:main',
