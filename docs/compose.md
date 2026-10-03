@@ -1,70 +1,230 @@
-# Container simulation and AI
+# Install and run Minibot with Docker Compose
 
-Requires native Docker Engine on Linux and the Compose plugin. ROS and Gazebo
-are installed only in the image. All ROS services use host networking and domain
-42, with discovery restricted to localhost by default. Gazebo uses partition
-`minibot`. Set a distinct ROS_DOMAIN_ID and GZ_PARTITION for concurrent projects.
-For a real robot on another computer, explicitly change discovery/network settings.
+This guide starts from a fresh Ubuntu 26.04 desktop. Install Docker on the host;
+ROS 2 Lyrical, Gazebo Jetty and the Minibot code are built inside the container
+image. You do not need a native ROS or Gazebo installation.
 
-## Start on your NVIDIA desktop
+## Which files do what?
 
-Install the NVIDIA Container Toolkit on the host using its official instructions:
-https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
-The existing NVIDIA host driver is also required. Do not install a driver in the image.
+| File | Purpose |
+|---|---|
+| `docker/Dockerfile` | Builds the shared ROS image with Gazebo and Minibot nodes |
+| `compose.yaml` | Complete service definitions, networking, volumes and software-rendered Gazebo |
+| `compose.nvidia.yaml` | Override that enables NVIDIA GPUs for Gazebo, Ollama and the optional GUI |
+
+For NVIDIA, pass both Compose files in that order. Compose merges their settings;
+the override replaces Gazebo's software-rendering startup command with headless
+GPU rendering. The NVIDIA file is not a standalone stack.
+
+## 1. Install prerequisites
+
+Install Git if it is not already available:
+
+```bash
+sudo apt update
+sudo apt install git
+```
+
+Install [Docker Engine and the Compose plugin](https://docs.docker.com/engine/install/ubuntu/)
+using Docker's official APT repository instructions. If Docker is already
+installed and works, keep it. Use native Docker Engine on Linux for this setup.
+The NVIDIA override requires Docker Compose 2.30.0 or newer.
+
+Check:
+
+```bash
+docker version
+docker compose version
+docker run --rm hello-world
+```
+
+The commands below assume your user can access Docker. If you receive a permission
+error, follow Docker's [Linux post-installation instructions](https://docs.docker.com/engine/install/linux-postinstall/).
+Membership of the Docker group grants root-level access to the host.
+
+### NVIDIA users only
+
+Your NVIDIA host driver must work first:
+
+```bash
+nvidia-smi
+```
+
+Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+using its official Ubuntu/Debian instructions, then configure the runtime:
+
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+Restarting Docker can interrupt existing containers. No NVIDIA driver installation
+is needed inside the Minibot image.
+
+Verify container GPU access:
+
+```bash
+docker run --rm --gpus all ubuntu:26.04 nvidia-smi
+```
+
+CPU-only users can skip the NVIDIA steps.
+
+## 2. Clone the repository
 
 ```bash
 git clone https://github.com/r-snijders/minibot.git
 cd minibot
-# Starts simulation, platform watchdog, battery, navigation, VLM adapter,
-# deterministic reasoning and a local Ollama server.
-docker compose -f compose.yaml -f compose.nvidia.yaml --profile ai up --build -d
-# One-time model download; persisted in the models volume.
-docker compose --profile ai exec model ollama pull qwen2.5vl:3b
-docker compose logs -f vlm reasoning navigation
 ```
 
-The VLM retries at its sampling interval while the server/model is unavailable.
-You can instead use an existing Ollama server by setting VLM_ENDPOINT and omitting
-`--profile ai`. Set VLM_MODEL to change the vision model. OLLAMA_IMAGE overrides
-the server image (default latest); pin a tested tag or digest for reproducibility.
-The small default model is a starting point, not a detection accuracy guarantee.
-Gazebo and inference share the GPU. Reduce image sampling frequency if needed.
+If you already have a checkout, run `git pull origin main` inside it instead.
 
-CPU-only alternative (slower inference):
+## 3. Select NVIDIA or CPU mode
+
+Define **one** of these Bash functions while inside the repository. It keeps all
+commands using the same Compose configuration. Define it again in each new
+terminal before using `dc`.
+
+**NVIDIA mode:**
 
 ```bash
-docker compose --profile ai up --build -d
-docker compose --profile ai exec model ollama pull qwen2.5vl:3b
+dc() {
+  docker compose -f compose.yaml -f compose.nvidia.yaml --profile ai "$@"
+}
 ```
 
-The default server runs with Xvfb so simulated cameras and GPU LiDAR can render
-using software graphics without a desktop display. The NVIDIA override switches
-to EGL headless rendering. This still renders sensors; it only removes the GUI.
-
-## Optional Gazebo GUI on Ubuntu / Hyprland
-
-Use the current XWayland DISPLAY and its Xauthority cookie. If XAUTHORITY is not
-already set, obtain the correct cookie file from your session before starting.
-Do not use `xhost +`. The cookie mount grants this trusted GUI access to your display.
+**CPU-only mode:**
 
 ```bash
-# DISPLAY and XAUTHORITY must refer to your running X/XWayland session.
+dc() {
+  docker compose -f compose.yaml --profile ai "$@"
+}
+```
+
+The `ai` profile enables the local Ollama model server. CPU inference and software
+sensor rendering can be substantially slower. NVIDIA mode uses EGL headless
+rendering; CPU mode uses Xvfb and software rendering. Both modes render camera
+and LiDAR data without requiring an open desktop window.
+
+## 4. Build and download the vision model
+
+```bash
+# Validate the selected configuration.
+dc config --quiet
+
+# Build the shared ROS/Gazebo/Minibot image.
+dc build
+
+# Start the model server and download weights once.
+dc up -d model
+dc exec model ollama pull qwen2.5vl:3b
+```
+
+The first build and model download can take a while. Model weights persist in a
+named volume. The default model is a starting point, not an accuracy guarantee.
+
+## 5. Start the complete stack
+
+```bash
+dc up -d
+dc ps
+dc logs -f gazebo vlm reasoning navigation
+```
+
+This starts Gazebo, the platform watchdog, simulated battery, navigation, VLM
+adapter, deterministic reasoning and Ollama. The GUI is optional and starts
+separately below. Pressing Ctrl+C exits the log viewer without stopping containers.
+
+Check camera frames and model observations in separate terminals:
+
+```bash
+dc exec gazebo ros2 topic hz /camera/image_raw
+```
+
+```bash
+dc exec vlm ros2 topic echo /perception/observations
+```
+
+You should receive camera frames and structured scene descriptions. The room has
+no human asset yet, so a person greeting is not expected without adding one or
+injecting a synthetic observation as described below.
+
+## 6. Open the optional Gazebo GUI
+
+From your desktop terminal, check the X/XWayland display and credentials:
+
+```bash
 test -n "$DISPLAY" && test -f "$XAUTHORITY"
-docker compose -f compose.yaml -f compose.nvidia.yaml --profile gui up -d gui
 ```
+
+If that succeeds:
+
+```bash
+dc --profile gui up -d gui
+```
+
+This also applies to Hyprland through XWayland. If the credential check fails,
+obtain the Xauthority cookie file for your running session and set XAUTHORITY
+before starting the GUI. Do not use `xhost +`. The cookie mount grants this trusted
+GUI access to your display. The headless simulation can run without GUI credentials.
 
 Closing/stopping the GUI leaves the server running. If graphics fail, check the
 NVIDIA runtime and XWayland credentials separately from ROS networking.
 
+## 7. Stop, restart or rebuild
+
+```bash
+# Stop and remove containers, retaining model weights and robot state.
+dc --profile gui down
+
+# Start again using the existing image and weights.
+dc up -d
+
+# After changing application code, rebuild and recreate affected containers.
+dc up --build -d
+```
+
+Adding `-v` to `down` deletes the named volumes, including downloaded model weights.
+
+## Configuration and networking
+
+All ROS services use host networking and domain 42, with discovery restricted to
+localhost by default. Gazebo uses partition `minibot`. Set distinct ROS_DOMAIN_ID
+and GZ_PARTITION values for concurrent projects. Communicating with a physical
+robot on another computer requires explicitly changing discovery/network settings.
+
+Gazebo and inference share GPU resources in NVIDIA mode. Reduce camera sampling
+frequency if necessary. The current override exposes all NVIDIA GPUs.
+
+The local model server binds port 11434 on the host's loopback interface. If an
+existing Ollama server already uses that port, either stop it or use that server:
+set VLM_ENDPOINT and omit `--profile ai` in your chosen dc function. In that mode,
+skip `dc up -d model` and download the vision model through your existing server.
+
+Set VLM_MODEL to change the vision model. OLLAMA_IMAGE overrides the model-server
+image (default latest); pin a tested tag or digest for reproducible deployments.
+The VLM adapter retries while the server/model is unavailable.
+
+## Troubleshooting
+
+| Symptom | First check |
+|---|---|
+| Docker permission denied | Docker post-installation instructions and your user's access |
+| Compose rejects `gpus` | Compose version must be at least 2.30.0 |
+| No GPU in container | Host `nvidia-smi`, NVIDIA toolkit configuration and container GPU check |
+| Port 11434 already in use | Existing Ollama process or another model container |
+| VLM has no observations | Camera topic, model download, `dc logs vlm model` |
+| No GUI window | DISPLAY/XAUTHORITY check and `dc logs gui` |
+| No camera or scan data | `dc logs gazebo` and GPU/software rendering setup |
+
 ## Observe and drive
 
 ```bash
-docker compose exec reasoning ros2 topic echo /reasoning/status
-docker compose exec vlm ros2 topic echo /perception/observations
-docker compose exec gazebo ros2 topic hz /camera/image_raw
+dc exec reasoning ros2 topic echo /reasoning/status
+dc exec vlm ros2 topic echo /perception/observations
+dc exec gazebo ros2 topic hz /camera/image_raw
 # Pause autonomous control before manually driving:
-docker compose exec platform ros2 service call /behavior/enable std_srvs/srv/SetBool '{data: false}'
-docker compose run --rm platform ros2 run teleop_twist_keyboard teleop_twist_keyboard
+dc exec platform ros2 service call /behavior/enable std_srvs/srv/SetBool '{data: false}'
+dc run --rm platform ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
 Services:
@@ -99,9 +259,9 @@ recognizable human mesh/actor; it cannot be demonstrated with this empty room.
 You can test the reasoning/greeting wiring independently (synthetic observation):
 
 ```bash
-docker compose exec reasoning ros2 topic pub --once /perception/observations std_msgs/msg/String \
+dc exec reasoning ros2 topic pub --once /perception/observations std_msgs/msg/String \
   '{data: "{\"person_visible\": true, \"description\": \"test person\", \"age_seconds\": 0}"}'
-docker compose exec navigation ros2 topic echo /behavior/status
+dc exec navigation ros2 topic echo /behavior/status
 ```
 
 Speech text is published to /speech/text. Audible speech is disabled in Compose
@@ -113,22 +273,24 @@ The simulated battery/contact model does not validate real charger electronics.
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_*.py'
-docker compose config --quiet
-docker compose build
+dc config --quiet
+dc build
 # End-to-end transport/physics test, using a mock model server (no model download):
 # Stop local model/navigation first so port 11434 and manual control are free.
-docker compose --profile ai stop model navigation
-docker compose up -d gazebo platform battery vlm reasoning
-docker compose run --rm --no-deps platform python3 /ws/src/minibot/tests/ros_smoke.py
+dc stop model navigation
+dc up -d gazebo platform battery vlm reasoning
+dc run --rm --no-deps platform python3 /ws/src/minibot/tests/ros_smoke.py
 ```
 
 The smoke test verifies actual simulated camera, scan, clock, odometry movement,
 JPEG-to-HTTP inference and reasoning publication. Its mock response is not a VLM
-accuracy test. GitHub CI runs unit tests, Compose validation, image build and this
-smoke test with software rendering. Hardware GPU/GUI validation remains local.
+accuracy test. The GitHub CI workflow is configured to run unit tests, Compose validation,
+image build and this smoke test with software rendering. At the time this guide
+was written, local unit tests passed, but full Gazebo/GPU execution had not been
+verified by the implementation author. Hardware GPU/GUI validation remains local.
 
 ```bash
-docker compose --profile ai --profile gui down
+dc --profile gui down
 ```
 
 Maps/dock state and model weights persist in named volumes. `down -v` deletes them.

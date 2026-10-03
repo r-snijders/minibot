@@ -5,16 +5,16 @@ A two-wheel differential-drive rover (180 mm long, 140 mm wide), with 65 mm whee
 ## Docker Compose (recommended)
 
 Run ROS 2 Lyrical, Gazebo Jetty, platform control, navigation, a VLM adapter and
-reasoning as separate services. See [container setup and commands](docs/compose.md)
-for NVIDIA/CPU startup, model download, optional GUI and integration checks.
+reasoning as separate services.
 
-```bash
-docker compose -f compose.yaml -f compose.nvidia.yaml --profile ai up --build -d
-docker compose --profile ai exec model ollama pull qwen2.5vl:3b
-```
+**Start here: [Install and run Minibot with Docker Compose](docs/compose.md).**
 
-No ROS installation on the host is required. The reasoning policy is currently
-deterministic; the VLM performs real inference through Ollama.
+The guide covers Docker installation, the NVIDIA Container Toolkit, CPU and GPU
+startup, model download, the optional Gazebo GUI, verification and troubleshooting.
+It also explains how `compose.yaml` and `compose.nvidia.yaml` fit together.
+
+No ROS or Gazebo installation on the host is required. The reasoning policy is
+currently deterministic; the VLM performs real inference through Ollama.
 
 ## Native software (Ubuntu 26.04, optional)
 
